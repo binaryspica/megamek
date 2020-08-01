@@ -107,6 +107,7 @@ public class WeaponAttackAction extends AbstractAttackAction implements Serializ
     
     private int weaponId;
     private int ammoId = -1;
+    private int ammoCarrier = -1;
     private int aimedLocation = Entity.LOC_NONE;
     private int aimMode = IAimingModes.AIM_MODE_NONE;
     private int otherAttackInfo = -1; //
@@ -189,6 +190,14 @@ public class WeaponAttackAction extends AbstractAttackAction implements Serializ
     public int getAmmoId() {
         return ammoId;
     }
+    
+    /**
+     * Returns the entity id of the unit carrying the ammo used by this attack
+     * @return
+     */
+    public int getAmmoCarrier() {
+        return ammoCarrier;
+    }
 
     public int getAimedLocation() {
         return aimedLocation;
@@ -208,6 +217,14 @@ public class WeaponAttackAction extends AbstractAttackAction implements Serializ
 
     public void setAmmoId(int ammoId) {
         this.ammoId = ammoId;
+    }
+    
+    /**
+     * Sets the entity id of the ammo carrier for this shot, if different than the firing entity
+     * @param entityId
+     */
+    public void setAmmoCarrier(int entityId) {
+        this.ammoCarrier = entityId;
     }
 
     public void setAimedLocation(int aimedLocation) {
@@ -670,7 +687,7 @@ public class WeaponAttackAction extends AbstractAttackAction implements Serializ
         toHit = new ToHitData(ae.getCrew().getGunnery(), Messages.getString("WeaponAttackAction.GunSkill"));
         if (game.getOptions().booleanOption(OptionsConstants.RPG_RPG_GUNNERY)) {
             if (wtype.hasFlag(WeaponType.F_ENERGY)) {
-                toHit = new ToHitData(ae.getCrew().getGunneryL(), Messages.getString("WeaponAttackAction.GunESkill"));
+                toHit = new ToHitData(ae.getCrew().getGunneryL(), Messages.getString("WeaponAttackAction.GunLSkill"));
             }
             if (wtype.hasFlag(WeaponType.F_MISSILE)) {
                 toHit = new ToHitData(ae.getCrew().getGunneryM(), Messages.getString("WeaponAttackAction.GunMSkill"));
@@ -1763,7 +1780,7 @@ public class WeaponAttackAction extends AbstractAttackAction implements Serializ
                     return Messages.getString("WeaponAttackAction.NoDirectCruiseMissile");
                 }
                 // Direct fire artillery cannot be fired at less than 6 hexes
-                if (isArtilleryDirect && (Compute.effectiveDistance(game, ae, target) <= 6)) {
+                if (isArtilleryDirect && !target.isAirborne() && (Compute.effectiveDistance(game, ae, target) <= 6)) {
                     return Messages.getString("WeaponAttackAction.TooShortForDirectArty");
                 }
                 // ...or more than 17 hexes
@@ -2430,7 +2447,26 @@ public class WeaponAttackAction extends AbstractAttackAction implements Serializ
                     }
                 }
             }
-            
+
+            // Protomechs cannot fire arm weapons and main gun in the same turn
+            if ((ae instanceof Protomech)
+                    && ((weapon.getLocation() == Protomech.LOC_MAINGUN)
+                    || (weapon.getLocation() == Protomech.LOC_RARM)
+                    || (weapon.getLocation() == Protomech.LOC_LARM))) {
+                final boolean firingMainGun = weapon.getLocation() == Protomech.LOC_MAINGUN;
+                for (EntityAction ea : game.getActionsVector()) {
+                    if ((ea.getEntityId() == attackerId) && (ea instanceof WeaponAttackAction)) {
+                        WeaponAttackAction otherWAA = (WeaponAttackAction) ea;
+                        final Mounted otherWeapon = ae.getEquipment(otherWAA.getWeaponId());
+                        if ((firingMainGun && ((otherWeapon.getLocation() == Protomech.LOC_RARM)
+                                || (otherWeapon.getLocation() == Protomech.LOC_LARM)))
+                                || !firingMainGun && (otherWeapon.getLocation() == Protomech.LOC_MAINGUN)) {
+                            return Messages.getString("WeaponAttackAction.CantFireArmsAndMainGun");
+                        }
+                    }
+                }
+            }
+
             // TAG
             
             // The TAG system cannot target Airborne Aeros.
@@ -3885,7 +3921,7 @@ public class WeaponAttackAction extends AbstractAttackAction implements Serializ
         // Unofficial weapon class specialist - Does not have an unspecialized penalty 
         if (ae.hasAbility(OptionsConstants.UNOFF_GUNNERY_LASER)
                 && wtype != null && wtype.hasFlag(WeaponType.F_ENERGY)) {
-            toHit.addModifier(-1, Messages.getString("WeaponAttackAction.GunESkill"));
+            toHit.addModifier(-1, Messages.getString("WeaponAttackAction.GunLSkill"));
         }
 
         if (ae.hasAbility(OptionsConstants.UNOFF_GUNNERY_BALLISTIC)
@@ -4347,9 +4383,14 @@ public class WeaponAttackAction extends AbstractAttackAction implements Serializ
         
         // Target Terrain
         
+        // BMM p. 31, semi-guided indirect missile attacks vs tagged targets ignore terrain modifiers
+        boolean semiGuidedIndirectVsTaggedTarget = isIndirect && 
+                (atype != null) && atype.getMunitionType() == AmmoType.M_SEMIGUIDED && 
+                        Compute.isTargetTagged(target, game);
+        
         // Base terrain calculations, not applicable when delivering minefields or bombs
         // also not applicable in pointblank shots from hidden units
-        if ((ttype != Targetable.TYPE_MINEFIELD_DELIVER) && !isPointBlankShot) {
+        if ((ttype != Targetable.TYPE_MINEFIELD_DELIVER) && !isPointBlankShot && !semiGuidedIndirectVsTaggedTarget) {
             toHit.append(Compute.getTargetTerrainModifier(game, target, eistatus, inSameBuilding, underWater));
             toSubtract += Compute.getTargetTerrainModifier(game, target, eistatus, inSameBuilding, underWater)
                     .getValue();

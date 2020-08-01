@@ -97,6 +97,7 @@ public abstract class Entity extends TurnOrdered implements Transporter,
     private static final long serialVersionUID = 1430806396279853295L;
 
     public static final int DOES_NOT_TRACK_HEAT = 999;
+    public static final int UNLIMITED_JUMP_DOWN = 999;
 
     /**
      * Entity Type Id Definitions These are used to identify the type of Entity,
@@ -256,6 +257,11 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      * The pilot of the entity. Even infantry has a 'pilot'.
      */
     private Crew crew;
+    
+    // Crew and passenger numbers
+    protected int nCrew;
+    protected int nPassenger;
+    protected int nMarines;
 
     private Quirks quirks = new Quirks();
     private PartialRepairs partReps = new PartialRepairs();
@@ -850,6 +856,9 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      */
     public Entity() {
         crew = new Crew(defaultCrewType());
+        nCrew = 0;
+        nPassenger = 0;
+        nMarines = 0;
         armor = new int[locations()];
         internal = new int[locations()];
         orig_armor = new int[locations()];
@@ -1363,6 +1372,11 @@ public abstract class Entity extends TurnOrdered implements Transporter,
     }
 
     public boolean isClanArmor(int loc) {
+        // if the location does not exist, it does not have clan armor
+        if (loc >= locations()) {
+            return false;
+        }
+        
         if (getArmorTechLevel(loc) == TechConstants.T_TECH_UNKNOWN) {
             return isClan();
         }
@@ -1424,6 +1438,7 @@ public abstract class Entity extends TurnOrdered implements Transporter,
         this.weight = weight;
         // Any time the weight is reset we need to reset the crew size
         crew.setSize(Compute.getFullCrewSize(this));
+        crew.setCurrentSize(crew.getSize());
     }
 
     public boolean isOmni() {
@@ -1490,6 +1505,44 @@ public abstract class Entity extends TurnOrdered implements Transporter,
 
     public void setCrew(Crew crew) {
         this.crew = crew;
+    }
+    
+    /**
+     * @return The total number of crew available to supplement marines on boarding actions.
+     *         Includes officers, enlisted, and bay personnel, but not marines/ba or passengers.
+     */
+    public int getNCrew() {
+        return nCrew;
+    }
+    
+    public void setNCrew(int crew) {
+    }
+    
+    /**
+     * Returns the number of passengers on this unit
+     * Intended for spacecraft, where we want to get the crews of transported units
+     * plus actual passengers assigned to quarters
+     * @return
+     */
+    public int getNPassenger() {
+        return nPassenger;
+    }
+    
+    public void setNPassenger(int pass) {
+    }
+    
+    /**
+     * @return The number conventional marines available to vessels for boarding actions.
+     */
+    public int getNMarines() {
+        return nMarines;
+    }
+    
+    /**
+     * Updates the number of marines aboard
+     * @param marines The number of marines to add/subtract
+     */
+    public void setNMarines(int marines) {
     }
 
     /**
@@ -3848,11 +3901,36 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      * 
      * If this is a weapon bay, try to load the weapon with ammo in the same bay,
      * and if it fails, load with compatible ammo in the same location.
+     * 
+     * If this unit is part of a train, also check the vehicles directly connected
+     * to it for compatible ammo
      */
     public void loadWeaponWithSameAmmo(Mounted mounted) {
         for (Mounted mountedAmmo : getAmmo()) {
             if (loadWeaponWithSameAmmo(mounted, mountedAmmo)) {
                 return;
+            }
+        }
+        //Check the unit towing this one for ammo
+        if (getTowedBy() != Entity.NONE) {
+            Entity ahead = game.getEntity(getTowedBy());
+            if (ahead != null) {
+                for (Mounted towedByAmmo : ahead.getAmmo()) {
+                    if (loadWeaponWithSameAmmo(mounted, towedByAmmo)) {
+                        return;
+                    }
+                }
+            }
+        }
+        // Then check the unit towed by this one for ammo
+        if (getTowing() != Entity.NONE) {
+            Entity behind = game.getEntity(getTowing());
+            if (behind != null) {
+                for (Mounted towingAmmo : behind.getAmmo()) {
+                    if (loadWeaponWithSameAmmo(mounted, towingAmmo)) {
+                        return;
+                    }
+                }
             }
         }
         // fall back to use any ammo
@@ -4863,19 +4941,12 @@ public abstract class Entity extends TurnOrdered implements Transporter,
     }
 
     /**
-     * This method checks to see if a unit has Underwater Maneuvering Units Only
-     * Battle Mechs may have UMU's
+     * This method checks to see if a unit has Underwater Maneuvering Units
      *
      * @return <code>boolean</code> if the entity has usable UMU crits.
      */
     public boolean hasUMU() {
-        if (!(this instanceof Mech) && !(this instanceof Infantry)) {
-            return false;
-        }
-
-        int umuCount = getActiveUMUCount();
-
-        return umuCount > 0;
+        return getActiveUMUCount() > 0;
     }
 
     /**
@@ -4884,20 +4955,10 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      * @return number <code>int</code>of useable UMU's
      */
     public int getActiveUMUCount() {
-        int count = 0;
-
-        if (this instanceof Infantry) {
-            if ((getMovementMode() == EntityMovementMode.INF_UMU)
-            		|| (getMovementMode() == EntityMovementMode.SUBMARINE)) {
-	            // UMU MP for Infantry is stored in jumpMP
-	            return jumpMP;
-            }
-        }
-
         if (hasShield() && (getNumberOfShields(MiscType.S_SHIELD_LARGE) > 0)) {
             return 0;
         }
-
+        int count = 0;
         for (Mounted m : getMisc()) {
             EquipmentType type = m.getType();
             if ((type instanceof MiscType) && type.hasFlag(MiscType.F_UMU)
@@ -4905,7 +4966,6 @@ public abstract class Entity extends TurnOrdered implements Transporter,
                 count++;
             }
         }
-
         return count;
     }
 
@@ -4915,29 +4975,16 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      * @return <code>int</code>Total number of UMUs a mech has.
      */
     public int getAllUMUCount() {
-        int count = 0;
-
-        if ((this instanceof Infantry)
-            && (getMovementMode() == EntityMovementMode.INF_UMU)) {
-            // UMU MP for Infantry is stored in jumpMP
-            return jumpMP;
-        }
-
-        if (!(this instanceof Mech)) {
-            return 0;
-        }
-
         if (hasShield() && (getNumberOfShields(MiscType.S_SHIELD_LARGE) > 0)) {
             return 0;
         }
-
+        int count = 0;
         for (Mounted m : getMisc()) {
             EquipmentType type = m.getType();
             if ((type instanceof MiscType) && type.hasFlag(MiscType.F_UMU)) {
                 count++;
             }
         }
-
         return count;
     }
 
@@ -6728,6 +6775,8 @@ public abstract class Entity extends TurnOrdered implements Transporter,
                 return "Rail";
             case MAGLEV:
                 return "MagLev";
+            case STATION_KEEPING:
+                return "Station-Keeping";
             default:
                 return "ERROR";
         }
@@ -8154,17 +8203,23 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      * @return the number of docking collars
      */
     public int getDocks() {
-        int n = 0;
+        return getDocks(false);
+    }
 
+    /**
+     * @param forCost Whether this value is being used for cost calculations, in which case
+     *                dropshuttle bays count as two collars.
+     * @return The number of docking collars
+     */
+    public int getDocks(boolean forCost) {
+        int n = 0;
         for (Transporter next : transports) {
-            if (next instanceof DockingCollar) {
-                n++;
+            if ((next instanceof DockingCollar)
+                    || (forCost && (next instanceof DropshuttleBay))) {
+                n += next.hardpointCost();
             }
         }
-
-        // Return the number
         return n;
-
     }
 
     /**
@@ -8181,6 +8236,29 @@ public abstract class Entity extends TurnOrdered implements Transporter,
             if (next instanceof Bay) {
                 for (Entity e : next.getLoadedUnits()) {
                     result.addElement(e);
+                }
+            }
+        }
+
+        // Return the list.
+        return result;
+    }
+    
+    /**
+     * Generate a list of the Ids of entities stored in bays. 
+     * Used by MHQ in cases where we can't get the entities via Game
+     *
+     * @return
+     */
+    public List<Integer> getBayLoadedUnitIds() {
+        List<Integer> result = new ArrayList<Integer>();
+
+        // Walk through this entity's transport components;
+        // add all of their lists to ours.
+        for (Transporter next : transports) {
+            if (next instanceof Bay) {
+                for (int i : ((Bay)next).getLoadedUnitIds()) {
+                    result.add(i);
                 }
             }
         }
@@ -9119,15 +9197,14 @@ public abstract class Entity extends TurnOrdered implements Transporter,
 
     /**
      * Um, basically everything can spot for LRM indirect fire.
+     * Except for off-board units and units that sprinted.
      *
-     * @return true, if the entity is active
+     * @return true, if the entity is eligible to spot
      */
     public boolean canSpot() {
-        if (game.getOptions().booleanOption(OptionsConstants.ADVANCED_PILOTS_CANNOT_SPOT)
-            && (this instanceof MechWarrior)) {
-            return false;
-        }
-        return isActive() && !isOffBoard();
+        return isActive() && !isOffBoard() && 
+        		(moved != EntityMovementType.MOVE_SPRINT) && 
+        		(moved != EntityMovementType.MOVE_VTOL_SPRINT);
     }
 
     @Override
@@ -9271,7 +9348,21 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      * Returns true if the entity should be deployed
      */
     public boolean shouldDeploy(int round) {
-        return (!deployed && (getDeployRound() <= round) && !isOffBoard());
+        return !isDeployed() 
+            && (getDeployRound() <= round)
+            && !isOffBoard();
+    }
+
+    /**
+     * Returns true if the offboard entity should be deployed this round.
+     * @param round The current round number.
+     * @return True if and only if the offboard entity should deploy this
+     *         round, otherwise false.
+     */
+    public boolean shouldOffBoardDeploy(int round) {
+        return isOffBoard() 
+            && !isDeployed() 
+            && (getDeployRound() <= round);
     }
 
     /**
@@ -9653,8 +9744,9 @@ public abstract class Entity extends TurnOrdered implements Transporter,
     }
 
     /**
-     * An entity is eligible if its to-hit number is anything but impossible.
-     * This is only really an issue if friendly fire is turned off.
+     * An entity is eligible for firing if it's not taking some kind of action
+     * that prevents it from firing, such as a full-round physical attack
+     * or sprinting.
      */
     public boolean isEligibleForFiring() {
         // if you're charging, no shooting
@@ -9676,18 +9768,6 @@ public abstract class Entity extends TurnOrdered implements Transporter,
         if (!isActive()) {
             return false;
         }
-
-        // Check for weapons. If we find them, return true. Otherwise... we
-        // return false.
-        // Bug 3648: No, no, no - you cannot skip units with no weapons - what
-        // about spotting, unjamming, etc.?
-        /*
-         * for (Mounted mounted : getWeaponList()) { WeaponType wtype =
-         * (WeaponType) mounted.getType(); if ((wtype != null) &&
-         * (!wtype.hasFlag(WeaponType.F_AMS) && !wtype.hasFlag(WeaponType.F_TAG)
-         * && mounted.isReady() && ((mounted.getLinked() == null) || (mounted
-         * .getLinked().getUsableShotsLeft() > 0)))) { return true; } }
-         */
 
         return true;
     }
@@ -10054,8 +10134,9 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      * <p/>
      * Onboard units (units with an offboard distance of zero and a direction of
      * <code>Entity.NONE</code>) will be unaffected by this method.
+     * @param round The current round number.
      */
-    public void deployOffBoard() {
+    public void deployOffBoard(int round) {
         if (null == game) {
             throw new IllegalStateException(
                     "game not set; possible serialization error");
@@ -10064,20 +10145,18 @@ public abstract class Entity extends TurnOrdered implements Transporter,
         // add a bit (because 17 % 2 == 1 and 16 % 2 == 0).
         switch (offBoardDirection) {
             case NONE:
-                break;
+                return;
             case NORTH:
                 setPosition(new Coords((game.getBoard().getWidth() / 2)
                         + (game.getBoard().getWidth() % 2),
                         -getOffBoardDistance()));
                 setFacing(3);
-                setDeployed(true);
                 break;
             case SOUTH:
                 setPosition(new Coords((game.getBoard().getWidth() / 2)
                         + (game.getBoard().getWidth() % 2), game.getBoard()
                         .getHeight() + getOffBoardDistance()));
                 setFacing(0);
-                setDeployed(true);
                 break;
             case EAST:
                 setPosition(new Coords(game.getBoard().getWidth()
@@ -10085,15 +10164,16 @@ public abstract class Entity extends TurnOrdered implements Transporter,
                         (game.getBoard().getHeight() / 2)
                                 + (game.getBoard().getHeight() % 2)));
                 setFacing(5);
-                setDeployed(true);
                 break;
             case WEST:
                 setPosition(new Coords(-getOffBoardDistance(), (game.getBoard()
                         .getHeight() / 2) + (game.getBoard().getHeight() % 2)));
                 setFacing(1);
-                setDeployed(true);
                 break;
         }
+
+        // deploy the unit, but only if it should be deployed this round
+        setDeployed(shouldOffBoardDeploy(round));
     }
 
     public Vector<Integer> getPickedUpMechWarriors() {
@@ -10560,8 +10640,7 @@ public abstract class Entity extends TurnOrdered implements Transporter,
             if (mounted.isWeaponGroup()) {
                 continue;
             }
-            long itemCost = (long) mounted.getType().getCost(this,
-                                                             mounted.isArmored(), mounted.getLocation());
+            long itemCost = (long) mounted.getCost();
 
             cost += itemCost;
             if ((bvText != null) && (itemCost > 0)) {
@@ -13378,8 +13457,8 @@ public abstract class Entity extends TurnOrdered implements Transporter,
     			specialAbilities.put(BattleForceSPA.CASEII, null);
     		} else if (m.getType().hasFlag(MiscType.F_DRONE_OPERATING_SYSTEM)) {
     			specialAbilities.put(BattleForceSPA.DRO, null);
-    		} else if (m.getType().hasFlag(MiscType.F_DRONE_EXTRA)) {
-    			specialAbilities.merge(BattleForceSPA.DCC, 1, Integer::sum);
+    		} else if (m.getType().hasFlag(MiscType.F_DRONE_CARRIER_CONTROL)) {
+    			specialAbilities.merge(BattleForceSPA.DCC, (int) m.getSize(), Integer::sum);
     		} else if (m.getType().hasFlag(MiscType.F_EJECTION_SEAT)) {
     			specialAbilities.put(BattleForceSPA.ES, null);
     		} else if (m.getType().hasFlag(MiscType.F_ECM)) {
@@ -15048,6 +15127,13 @@ public abstract class Entity extends TurnOrdered implements Transporter,
         return false;
     }
 
+    /**
+     * @return Whether the unit uses primitive or retrotech construction rules
+     */
+    public boolean isPrimitive() {
+        return false;
+    }
+
     public int getStructuralTechRating() {
         return structuralTechRating;
     }
@@ -15505,7 +15591,7 @@ public abstract class Entity extends TurnOrdered implements Transporter,
         //Remove the designated trailer from the tractor's carried units
         removeTowedUnit(id);
         //Now, find and empty the transporter on the actual towing entity (trailer or tractor)
-        Entity towingEnt = game.getEntity(towed.towedBy);
+        Entity towingEnt = game.getEntity(towed.getTowedBy());
         towingEnt.connectedUnits.clear();
         if (towingEnt != null) {
             Transporter hitch = towingEnt.getHitchCarrying(id);
@@ -15519,7 +15605,7 @@ public abstract class Entity extends TurnOrdered implements Transporter,
             Entity trailer = game.getEntity(i);
             trailer.setTractor(Entity.NONE);
             tractor.removeTowedUnit(i);
-            towingEnt = game.getEntity(trailer.towedBy);
+            towingEnt = game.getEntity(trailer.getTowedBy());
             if (towingEnt != null) {
                 Transporter hitch = towingEnt.getHitchCarrying(i);
                 if (hitch != null) {
@@ -15532,6 +15618,7 @@ public abstract class Entity extends TurnOrdered implements Transporter,
         //Update these last, or we get concurrency issues
         towed.setTractor(Entity.NONE);
         towed.setTowedBy(Entity.NONE);
+        towed.setTowing(Entity.NONE);
         towed.connectedUnits.clear();
     }
 
@@ -15564,6 +15651,9 @@ public abstract class Entity extends TurnOrdered implements Transporter,
      */
     public void removeTowedUnit(int id) {
         isTractorFor.remove(isTractorFor.indexOf(id));
+        if (getTowing() == id) {
+            setTowing(Entity.NONE);
+        }
     }
 
     /**

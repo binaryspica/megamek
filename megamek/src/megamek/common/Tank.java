@@ -291,8 +291,8 @@ public class Tank extends Entity {
         
         //If the unit is towing trailers, adjust its walkMP, TW p205
         if (!getAllTowedUnits().isEmpty()) {
-            double tractorWeight = getWeight();
-            double trailerWeight = 0;
+            double trainWeight = getWeight();
+            int lowestSuspensionFactor = getSuspensionFactor();
             //Add up the trailers
             for (int id : getAllTowedUnits()) {
                 Entity tr = game.getEntity(id);
@@ -300,13 +300,15 @@ public class Tank extends Entity {
                     //this isn't supposed to happen, but it can in rare cases when tr is destroyed
                     continue;
                 }
-                trailerWeight += tr.getWeight();
+                if (tr instanceof Tank) {
+                    Tank trailer = (Tank) tr;
+                    if (trailer.getSuspensionFactor() < lowestSuspensionFactor) {
+                        lowestSuspensionFactor = trailer.getSuspensionFactor();
+                    }
+                }
+                trainWeight += tr.getWeight();
             }
-            if (trailerWeight <= (tractorWeight / 4)) {
-                j = Math.max((j - 3), (j / 2));
-            } else {
-                j = (j / 2);
-            }
+            j = (int) ((getEngine().getRating() + lowestSuspensionFactor) / trainWeight);
         }
 
         return j;
@@ -578,59 +580,61 @@ public class Tank extends Entity {
 
         boolean hasFlotationHull = hasWorkingMisc(MiscType.F_FLOTATION_HULL);
         boolean isAmphibious = hasWorkingMisc(MiscType.F_FULLY_AMPHIBIOUS);
+        boolean hexHasRoad =  hex.containsTerrain(Terrains.ROAD);
 
+        // roads allow movement through hexes that you normally couldn't go through
         switch (movementMode) {
             case TRACKED:
                 if (!isSuperHeavy()) {
-                    return (hex.terrainLevel(Terrains.WOODS) > 1)
+                    return ((hex.terrainLevel(Terrains.WOODS) > 1) && !hexHasRoad)
                             || ((hex.terrainLevel(Terrains.WATER) > 0)
                                     && !hex.containsTerrain(Terrains.ICE)
                                     && !hasFlotationHull && !isAmphibious)
-                            || hex.containsTerrain(Terrains.JUNGLE)
+                            || (hex.containsTerrain(Terrains.JUNGLE) && !hexHasRoad)
                             || (hex.terrainLevel(Terrains.MAGMA) > 1)
                             || (hex.terrainLevel(Terrains.ROUGH) > 1)
-                            || (hex.terrainLevel(Terrains.RUBBLE) > 5);
+                            || ((hex.terrainLevel(Terrains.RUBBLE) > 5) && !hexHasRoad);
                 } else {
-                    return (hex.terrainLevel(Terrains.WOODS) > 1)
+                    return ((hex.terrainLevel(Terrains.WOODS) > 1) && !hexHasRoad)
                             || ((hex.terrainLevel(Terrains.WATER) > 0)
                                     && !hex.containsTerrain(Terrains.ICE)
                                     && !hasFlotationHull && !isAmphibious)
-                            || hex.containsTerrain(Terrains.JUNGLE)
+                            || (hex.containsTerrain(Terrains.JUNGLE) && !hexHasRoad)
                             || (hex.terrainLevel(Terrains.MAGMA) > 1);
                 }
             case WHEELED:
                 if (!isSuperHeavy()) {
-                    return hex.containsTerrain(Terrains.WOODS)
-                            || hex.containsTerrain(Terrains.ROUGH)
+                    return (hex.containsTerrain(Terrains.WOODS) && !hexHasRoad)
+                            || (hex.containsTerrain(Terrains.ROUGH) && !hexHasRoad)
                             || ((hex.terrainLevel(Terrains.WATER) > 0)
                                     && !hex.containsTerrain(Terrains.ICE)
                                     && !hasFlotationHull && !isAmphibious)
-                            || hex.containsTerrain(Terrains.RUBBLE)
+                            || (hex.containsTerrain(Terrains.RUBBLE) && !hexHasRoad)
                             || hex.containsTerrain(Terrains.MAGMA)
-                            || hex.containsTerrain(Terrains.JUNGLE)
-                            || (hex.terrainLevel(Terrains.SNOW) > 1)
+                            || (hex.containsTerrain(Terrains.JUNGLE) && !hexHasRoad)
+                            || ((hex.terrainLevel(Terrains.SNOW) > 1) && !hexHasRoad)
                             || (hex.terrainLevel(Terrains.GEYSER) == 2);
                 } else {
-                    return hex.containsTerrain(Terrains.WOODS)
-                            || hex.containsTerrain(Terrains.ROUGH)
+                    return (hex.containsTerrain(Terrains.WOODS) && !hexHasRoad)
+                            || (hex.containsTerrain(Terrains.ROUGH) && !hexHasRoad)
                             || ((hex.terrainLevel(Terrains.WATER) > 0)
                                     && !hex.containsTerrain(Terrains.ICE)
                                     && !hasFlotationHull && !isAmphibious)
-                            || hex.containsTerrain(Terrains.RUBBLE)
+                            || (hex.containsTerrain(Terrains.RUBBLE) && !hexHasRoad)
                             || hex.containsTerrain(Terrains.MAGMA)
-                            || hex.containsTerrain(Terrains.JUNGLE)
+                            || (hex.containsTerrain(Terrains.JUNGLE) && !hexHasRoad)
                             || (hex.terrainLevel(Terrains.GEYSER) == 2);
                 }
             case HOVER:
                 if (!isSuperHeavy()) {
-                    return hex.containsTerrain(Terrains.WOODS)
-                            || hex.containsTerrain(Terrains.JUNGLE)
+                    return (hex.containsTerrain(Terrains.WOODS) && !hexHasRoad)
+                            || (hex.containsTerrain(Terrains.JUNGLE) && !hexHasRoad)
                             || (hex.terrainLevel(Terrains.MAGMA) > 1)
-                            || (hex.terrainLevel(Terrains.ROUGH) > 1)
-                            || (hex.terrainLevel(Terrains.RUBBLE) > 5);
+                            || ((hex.terrainLevel(Terrains.ROUGH) > 1) && !hexHasRoad)
+                            || ((hex.terrainLevel(Terrains.RUBBLE) > 5) && !hexHasRoad);
                 } else {
-                    return hex.containsTerrain(Terrains.WOODS)
-                            || hex.containsTerrain(Terrains.JUNGLE)
+                    return (hex.containsTerrain(Terrains.WOODS) && !hexHasRoad)
+                            || (hex.containsTerrain(Terrains.JUNGLE) && !hexHasRoad)
                             || (hex.terrainLevel(Terrains.MAGMA) > 1);
                 }
 
@@ -1403,7 +1407,7 @@ public class Tank extends Entity {
                 MiscType mtype = (MiscType) etype;
                 double bv = mtype.getBV(this, mounted.getLocation());
                 bvText.append(startColumn);
-                bvText.append(etype.getName());
+                bvText.append(mounted.getName());
                 bvText.append(endColumn);
                 bvText.append(startColumn);
                 bvText.append(bv);
@@ -1473,19 +1477,22 @@ public class Tank extends Entity {
                 typeModifier = 0.6;
         }
 
-        if (!isSupportVehicle()
-                && (hasWorkingMisc(MiscType.F_LIMITED_AMPHIBIOUS)
-                        || hasWorkingMisc(MiscType.F_DUNE_BUGGY)
-                        || hasWorkingMisc(MiscType.F_FLOTATION_HULL)
-                        || hasWorkingMisc(MiscType.F_ENVIRONMENTAL_SEALING)
-                        || hasWorkingMisc(MiscType.F_ARMORED_MOTIVE_SYSTEM))) {
-            typeModifier += .1;
-        } else if (hasWorkingMisc(MiscType.F_FULLY_AMPHIBIOUS)
-                && !isSupportVehicle()) {
-            typeModifier += .2;
+        if (!isSupportVehicle()) {
+            for (Mounted m : getMisc()) {
+                if (m.getType().hasFlag(MiscType.F_FULLY_AMPHIBIOUS)) {
+                    typeModifier += 0.2;
+                } else if (m.getType().hasFlag(MiscType.F_LIMITED_AMPHIBIOUS)
+                        || m.getType().hasFlag(MiscType.F_DUNE_BUGGY)
+                        || m.getType().hasFlag(MiscType.F_FLOTATION_HULL)
+                        || m.getType().hasFlag(MiscType.F_ENVIRONMENTAL_SEALING)
+                        || m.getType().hasFlag(MiscType.F_ARMORED_MOTIVE_SYSTEM)) {
+                    typeModifier += 0.1;
+                }
+            }
         }
+        typeModifier = Math.round(typeModifier * 10.0) / 10.0;
         bvText.append(startColumn);
-        bvText.append("x Body Type Modier");
+        bvText.append("x Body Type Modifier");
         bvText.append(endColumn);
         bvText.append(startColumn);
         bvText.append("x ");
@@ -1519,6 +1526,8 @@ public class Tank extends Entity {
         }
         double tmmFactor = 1 + (Math.max(tmmRan, tmmJumped) / 10);
         dbv *= tmmFactor;
+        // Deal with floating point errors
+        dbv = Math.round(dbv * 100000.0) / 100000.0;
 
         bvText.append(startColumn);
         bvText.append("x ");
@@ -1911,7 +1920,7 @@ public class Tank extends Entity {
                 bv = 7;
             }
             oEquipmentBV += bv;
-            bvText.append(mtype.getName());
+            bvText.append(mounted.getName());
             bvText.append(endColumn);
             bvText.append(startColumn);
             bvText.append(bv);
@@ -2283,7 +2292,7 @@ public class Tank extends Entity {
 
     @Override
     public int getHeatCapacity(boolean radicalHeatSinks) {
-        return 999;
+        return DOES_NOT_TRACK_HEAT;
     }
 
     @Override
@@ -3953,9 +3962,8 @@ public class Tank extends Entity {
                 specialAbilities.merge(BattleForceSPA.MDS, 1, Integer::sum);
             } else if (m.getType().hasFlag(MiscType.F_MINESWEEPER)) {
                 specialAbilities.put(BattleForceSPA.MSW, null);
-            } else if (m.getType().hasFlag(MiscType.F_MASH)
-                    || m.getType().hasFlag(MiscType.F_MASH_EXTRA)) { 
-                specialAbilities.merge(BattleForceSPA.MASH, 1, Integer::sum);
+            } else if (m.getType().hasFlag(MiscType.F_MASH)) {
+                specialAbilities.merge(BattleForceSPA.MASH, (int) m.getSize(), Integer::sum);
             } else if (m.getType().hasFlag(MiscType.F_MOBILE_FIELD_BASE)) {
                 specialAbilities.put(BattleForceSPA.MFB, null);
             } else if (m.getType().hasFlag(MiscType.F_COMMAND_CONSOLE)) {
