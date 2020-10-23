@@ -344,6 +344,7 @@ public class SharedUtility {
             // check for magma
             int level = curHex.terrainLevel(Terrains.MAGMA);
             if ((level == 1) && (step.getElevation() == 0)
+                    && (entity.getMovementMode() != EntityMovementMode.HOVER)
                     && (moveType != EntityMovementType.MOVE_JUMP)
                     && !(curPos.equals(lastPos))) {
                 nagReport.append(Messages
@@ -572,7 +573,7 @@ public class SharedUtility {
             if (!curPos.equals(lastPos)) {
                 prevFacing = curFacing;
             }
-            lastPos = new Coords(curPos);
+            lastPos = curPos;
             prevStep = step;
             prevHex = curHex;
             lastElevation = step.getElevation();
@@ -624,6 +625,14 @@ public class SharedUtility {
                     checkNag(rollTarget, nagReport, psrList);
                 }
 
+            }
+            
+            // check for magma
+            int level = hex.terrainLevel(Terrains.MAGMA);
+            if ((level == 1) && (lastElevation == 0)) {
+                nagReport.append(Messages.getString("MovementDisplay.MagmaCrustJumpLanding"));
+            } else if ((level == 2) && (lastElevation == 0)) {
+                nagReport.append(Messages.getString("MovementDisplay.MagmaLiquidMoving"));
             }
 
         }
