@@ -25,7 +25,7 @@ import java.util.Iterator;
 
 import megamek.MegaMek;
 import megamek.client.ui.swing.GUIPreferences;
-import megamek.client.ui.swing.util.ImageFileFactory;
+import megamek.common.util.fileUtils.ImageFileFactory;
 import megamek.common.*;
 import megamek.common.util.fileUtils.DirectoryItems;
 import megamek.common.util.ImageUtil;
@@ -72,8 +72,7 @@ public class EntityImage {
     
     static {
         try {
-            DecalImages = new DirectoryItems(DECAL_PATH, "",  
-                    ImageFileFactory.getInstance());
+            DecalImages = new DirectoryItems(DECAL_PATH, "", new ImageFileFactory());
         } catch (Exception e) {
             DecalImages = null;
             MegaMek.getLogger().warning("Failed to find the damage decal images." + e.getMessage());
@@ -165,10 +164,11 @@ public class EntityImage {
         
         int calculatedDamageLevel = entity.getDamageLevel();
         
-        // crippled entities may be "crippled" due to harmless weapon jams or being out of ammo but 
-        // not having taken any actual damage
-        if(calculatedDamageLevel == Entity.DMG_CRIPPLED) {
-            if(entity.getArmorRemainingPercent() >= 1.0) {
+        // entities may be "damaged" or "crippled" due to harmless weapon jams, being out of ammo or otherwise but 
+        // not having taken any actual damage. In this case, it looks stupid for the entity to be all shot up, 
+        // so we pretend there's no damage.
+        if(calculatedDamageLevel > Entity.DMG_NONE) {
+            if((entity.getArmorRemainingPercent() >= 1.0) && (entity.getInternalRemainingPercent() >= 1.0)) {
                 calculatedDamageLevel = Entity.DMG_NONE;
             }
         }

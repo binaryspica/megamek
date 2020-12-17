@@ -18,16 +18,12 @@
  */
 package megamek.common.icons;
 
-import megamek.MegaMek;
+import megamek.common.annotations.Nullable;
 import megamek.common.util.ImageUtil;
-import megamek.utils.MegaMekXmlUtil;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.PrintWriter;
 import java.io.Serializable;
 
 public abstract class AbstractIcon implements Serializable {
@@ -36,10 +32,9 @@ public abstract class AbstractIcon implements Serializable {
 
     public static final String ROOT_CATEGORY = "-- General --";
     public static final String DEFAULT_ICON_FILENAME = "None";
-    public static final int DEFAULT_IMAGE_SCALE = 75;
 
     private String category;
-    private String filename;
+    protected String filename;
     //endregion Variable Declarations
 
     //region Constructors
@@ -58,16 +53,16 @@ public abstract class AbstractIcon implements Serializable {
         return category;
     }
 
-    public void setCategory(String category) {
-        this.category = category;
+    public void setCategory(@Nullable String category) {
+        this.category = (category == null) ? ROOT_CATEGORY : category;
     }
 
     public String getFilename() {
         return filename;
     }
 
-    public void setFilename(String filename) {
-        this.filename = filename;
+    public void setFilename(@Nullable String filename) {
+        this.filename = (filename == null) ? DEFAULT_ICON_FILENAME : filename;
     }
     //endregion Getters/Setters
 
@@ -77,7 +72,8 @@ public abstract class AbstractIcon implements Serializable {
     }
 
     public boolean hasDefaultCategory() {
-        return ROOT_CATEGORY.equals(getCategory());
+        // TODO : Java 11 : Swap to using isBlank()
+        return ROOT_CATEGORY.equals(getCategory()) || getCategory().trim().isEmpty();
     }
 
     public boolean hasDefaultFilename() {
@@ -95,22 +91,29 @@ public abstract class AbstractIcon implements Serializable {
     }
 
     /**
-     * @return the ImageIcon for the Image stored by the AbstractIcon
+     * @return the ImageIcon for the Image stored by the AbstractIcon. May be null for non-existent
+     * files
      */
-    public ImageIcon getImageIcon() {
-        return new ImageIcon(getImage());
+    public @Nullable ImageIcon getImageIcon() {
+        Image image = getImage();
+        return (image == null) ? null : new ImageIcon(image);
     }
 
-    public ImageIcon getImageIcon(int size) {
-        return new ImageIcon(getImage(size));
+    public @Nullable ImageIcon getImageIcon(int size) {
+        Image image = getImage(size);
+        return (image == null) ? null : new ImageIcon(image);
     }
 
-    public Image getImage() {
+    public @Nullable Image getImage() {
         return getImage(0, 0);
     }
 
-    public Image getImage(int size) {
+    public @Nullable Image getImage(int size) {
         return getImage(size, -1);
+    }
+
+    public @Nullable Image getImage(int width, int height) {
+        return getImage(getBaseImage(), width, height);
     }
 
     /**
@@ -118,9 +121,7 @@ public abstract class AbstractIcon implements Serializable {
      * by creating a blank image if required.
      * @return the created image
      */
-    public Image getImage(int width, int height) {
-        Image image = getBaseImage();
-
+    protected Image getImage(Image image, int width, int height) {
         if (image == null) {
             return ImageUtil.failStandardImage();
         } else if (isScaled(width, height)) {
@@ -154,49 +155,10 @@ public abstract class AbstractIcon implements Serializable {
      */
     public abstract Image getBaseImage();
 
-    //region File IO
-    /**
-     * This writes the AbstractIcon to XML
-     * @param pw1 the PrintWriter to write to
-     * @param indent the indentation of the first line
-     */
-    public void writeToXML(PrintWriter pw1, int indent) {
-        MegaMekXmlUtil.writeSimpleXMLOpenIndentedLine(pw1, indent, "AbstractIcon");
-        MegaMekXmlUtil.writeSimpleXmlTag(pw1, indent + 1, "category", getCategory());
-        MegaMekXmlUtil.writeSimpleXmlTag(pw1, indent + 1, "filename", getFilename());
-        MegaMekXmlUtil.writeSimpleXMLCloseIndentedLine(pw1, indent, "AbstractIcon");
-    }
-
-    /**
-     * This is used to parse an AbstractIcon from a saved XML node
-     * @param retVal the AbstractIcon to parse into
-     * @param wn the node to parse from
-     * @return the parsed AbstractIcon
-     */
-    public static AbstractIcon parseFromXML(AbstractIcon retVal, Node wn) {
-        try {
-            NodeList nl = wn.getChildNodes();
-
-            for (int x = 0; x < nl.getLength(); x++) {
-                Node wn2 = nl.item(x);
-
-                if (wn2.getNodeName().equalsIgnoreCase("category")) {
-                    retVal.setCategory(wn2.getTextContent().trim());
-                } else if (wn2.getNodeName().equalsIgnoreCase("filename")) {
-                    retVal.setFilename(wn2.getTextContent().trim());
-                }
-            }
-        } catch (Exception e) {
-            MegaMek.getLogger().error("Failed to parse icon from nodes", e);
-        }
-
-        return retVal;
-    }
-    //endregion File IO
-
     @Override
     public String toString() {
-        return getCategory() + "/" + getFilename();
+        return hasDefaultCategory() ? getFilename()
+                : (getCategory().endsWith("/") ? getCategory() : getCategory() + "/") + getFilename();
     }
 
     @Override

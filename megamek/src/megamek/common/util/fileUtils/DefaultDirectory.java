@@ -18,8 +18,6 @@
  */
 package megamek.common.util.fileUtils;
 
-import megamek.common.util.ItemFileFactory;
-
 import java.io.File;
 
 /**
